@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OWS ComfortSense v2.1 - 附录代码</title>
+<style>
+/* 基础样式变量 */
+:root{
+  --bg:#f0f2f5;
+  --panel:#ffffff;
+  --border:#e2e5ea;
+  --text:#1a1d23;
+  --muted:#8a909e;
+  --green:#16c784;
+  --mono:'DM Mono',monospace;
+  --sans:'Noto Sans SC',sans-serif;
+  --side-w: clamp(320px, 32vw, 480px);
+}
+
+/* 响应式布局 */
+html,body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--text);
+  height:100vh;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  font-size:17px;
+}
+
+/* 三栏布局 */
+.body{display:flex;flex:1;overflow:hidden;}
+.left,.right{
+  width:var(--side-w);
+  min-width:var(--side-w);
+  background:var(--panel);
+  overflow-y:auto;
+  padding:20px 18px;
+  display:flex;
+  flex-direction:column;
+  gap:22px;
+  flex-shrink:0;
+}
+.left{border-right:1px solid var(--border);}
+.right{border-left:1px solid var(--border);}
+.center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+
+/* 热力图背景 */
+.canvas-wrap{
+  flex:1;
+  position:relative;
+  background:#ffffff;
+  overflow:hidden;
+  cursor:grab;
+}
+
+/* 响应式导出模态框 */
+.modal{
+  background:#fff;
+  border-radius:16px;
+  width:min(520px, calc(100vw - 32px));
+  max-width:calc(100vw - 32px);
+  max-height:calc(100vh - 32px);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.modal-body{
+  overflow-y:auto;
+  padding:16px 20px;
+  flex:1;
+  max-height:calc(100vh - 180px);
+}
+</style>
+</head>
+<body>
+
+<!-- 顶部导航栏 -->
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="logo">
+      <div class="logo-mark"></div>
+      OWS ComfortSense
+    </div>
+    <span class="vbadge">v2.1</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div class="live"><div class="live-dot"></div>实时计算</div>
+    <div class="score-pill" id="topScore">舒适度 — / 7</div>
+    <button class="export-btn" onclick="openModal()">导出报告</button>
+  </div>
+</div>
+
+<!-- 主体三栏布局 -->
+<div class="body">
+  <!-- 左侧控制面板 -->
+  <div class="left">
+    <div>
+      <div class="sec-lbl">耳机结构类型</div>
+      <select class="sel" id="structSel" onchange="onStructChange()">
+        <option value="0">12 腰子形</option>
+        <option value="1" selected>13.5 腰子形</option>
+        <option value="2">12 圆柱形</option>
+        <option value="3">13.5 圆柱形</option>
+        <option value="4">12-14mm 球形</option>
+        <option value="5">13.5-14mm 球形</option>
+      </select>
+    </div>
+
+    <div>
+      <div class="sec-lbl">佩戴阶段</div>
+      <button class="stage-btn active" id="s1" onclick="setStage(1)">初始佩戴</button>
+      <button class="stage-btn" id="s2" onclick="setStage(2)">静坐结束</button>
+      <button class="stage-btn" id="s3" onclick="setStage(3)">微动结束</button>
+      <button class="stage-btn" id="s4" onclick="setStage(4)">跑步结束</button>
+    </div>
+
+    <div>
+      <div class="sec-lbl">接触力（夹紧力）</div>
+      <div class="force-row">
+        <div class="force-num" id="forceNum">0.20<span class="force-unit">N</span></div>
+        <span class="safetag safe" id="safetag">● 安全</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" min="10" max="100" value="20" step="1" id="forceSlider" oninput="onForceSlider(this.value)">
+      </div>
+      <div class="force-presets" id="forcePresets">
+        <button class="fpreset active" data-v="10" onclick="setForcePreset(10)">0.1N</button>
+        <button class="fpreset" data-v="20" onclick="setForcePreset(20)">0.2N</button>
+        <button class="fpreset" data-v="30" onclick="setForcePreset(30)">0.3N</button>
+        <button class="fpreset" data-v="40" onclick="setForcePreset(40)">0.4N</button>
+        <button class="fpreset" data-v="50" onclick="setForcePreset(50)">0.5N</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-lbl">血流估算（自动）</div>
+      <div class="flow-est">
+        <div class="flow-est-lbl">血流 FLOW 下降率 ΔFlow</div>
+        <div class="flow-est-val" id="flowVal">— %</div>
+        <div class="flow-note">ΔFlow = [公式已脱敏]　模型估算，仅供参考</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中央3D可视化区域 -->
+  <div class="center">
+    <div class="center-hdr">
+      <div>
+        <div class="center-title">3D 耳廓接触分析</div>
+        <div class="center-sub" id="centerSub">[结构类型] · [佩戴阶段] · 热力映射</div>
+      </div>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="earCanvas"></canvas>
+      <div class="vc">
+        <div class="vc-btn" onclick="toggleView()">R</div>
+        <div class="vc-btn" onclick="resetView()">⟳</div>
+      </div>
+      <div class="hm-legend">
+        <span style="color:#ef4444;font-weight:600;">低</span>
+        <div class="hm-bar"></div>
+        <span style="color:#16c784;font-weight:600;">高</span>
+      </div>
+    </div>
+    <div class="botbar">
+      <div class="bstat"><strong id="bForce">—</strong> N</div>
+      <div class="bsep"></div>
+      <div class="bstat"><strong id="bArea">—</strong> mm²</div>
+      <div class="bsep"></div>
+      <div class="bstat">阈值占比: <strong id="bThresh">—</strong> %</div>
+    </div>
+  </div>
+
+  <!-- 右侧评估结果 -->
+  <div class="right">
+    <div class="rtitle">评估结果</div>
+    <div class="scard">
+      <div class="scard-lbl">综合舒适度评分</div>
+      <div class="scard-num" id="scardNum">—</div>
+      <div class="scard-denom">/ 7</div>
+    </div>
+
+    <div class="mgrid">
+      <div class="mcard">
+        <div class="mcard-lbl">接触力</div>
+        <div class="mcard-val" id="mForce">—<span class="mcard-unit">N</span></div>
+      </div>
+      <div class="mcard">
+        <div class="mcard-lbl">血流下降率</div>
+        <div class="mcard-val" id="mFlow">—<span class="mcard-unit">%</span></div>
+      </div>
+      <div class="mcard">
+        <div class="mcard-lbl">接触面积</div>
+        <div class="mcard-val" id="mArea">—<span class="mcard-unit">mm²</span></div>
+      </div>
+      <div class="mcard">
+        <div class="mcard-lbl">预测区间</div>
+        <div class="mcard-val" id="mCI">—</div>
+      </div>
+    </div>
+
+    <div class="sug-title">优化建议</div>
+    <div class="sug-list" id="sugList">
+      <div class="sug-item"><div class="sug-n">—</div><span>请设置参数以获取建议</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 导出模态框 -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">导出评估报告</div>
+        <div class="modal-date" id="modalDate"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-score">
+        <div class="modal-score-lbl">综合舒适度评分</div>
+        <div class="modal-score-num" id="mScoreNum">—</div>
+        <div class="modal-score-sub">满分 7 分</div>
+      </div>
+      <!-- 报告内容将动态生成 -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn-copy" onclick="copyReport()">复制报告</button>
+      <button class="btn-pdf" onclick="exportPDF()">导出PDF</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 数据结构定义（已脱敏）
+const STRUCT_NAMES = ['12 腰子形','13.5 腰子形','12 圆柱形','13.5 圆柱形','12-14mm 球形','13.5-14mm 球形'];
+const STAGE_NAMES = ['','初始佩戴','静坐结束','微动结束','跑步结束'];
+
+// 接触力安全阈值（示例数据）
+const SAFETY_THRESHOLDS = [/* 数据已脱敏 */];
+
+// 接触面积数据（示例数据）
+const AREAS = [/* 数据已脱敏 */];
+
+// 血流估算函数（公式已简化）
+function estimateFlow(F){
+  return Math.max(0, /* 公式已脱敏 */);
+}
+
+// 舒适度预测函数（模型已简化）
+function predictComfort(F,stage,dFlow){
+  return Math.max(1, Math.min(7, /* 模型已脱敏 */));
+}
+
+// 基于安全阈值的热力图颜色映射
+function scoreToColor(score, force){
+  const avgThreshold = SAFETY_THRESHOLDS.reduce((a,b) => a+b, 0) / SAFETY_THRESHOLDS.length;
+  const minForce = 0.1;
+  const maxForce = 0.5;
+
+  let t = (force - minForce) / (maxForce - minForce);
+  t = Math.max(0, Math.min(1, t));
+
+  if (force >= avgThreshold) {
+    t = 1;
+  }
+
+  const g=new THREE.Color(0x16c784);
+  const y=new THREE.Color(0xf59e0b);
+  const r=new THREE.Color(0xef4444);
+
+  const c=new THREE.Color();
+  if(t<0.5) {
+    c.lerpColors(g, y, t*2);
+  } else {
+    c.lerpColors(y, r, (t-0.5)*2);
+  }
+  return c;
+}
+
+// 3D热力图应用函数（Three.js相关代码已简化）
+function applyHeatmap(score, force){
+  // Three.js 3D可视化代码已脱敏
+  console.log('应用热力图: 分数=' + score + ', 力=' + force);
+}
+
+// 状态管理
+let state = {
+  struct: 1, // 默认13.5腰子形
+  stage: 1,  // 默认初始佩戴
+  force: 0.2 // 默认0.2N
+};
+
+// 界面更新函数
+function updateUI(){
+  const F = state.force;
+  const stage = state.stage;
+  const dFlow = estimateFlow(F);
+  const C = predictComfort(F, stage, dFlow);
+
+  // 更新界面元素（代码已简化）
+  console.log('更新UI: 舒适度=' + C.toFixed(2));
+}
+
+// 初始化函数
+function init(){
+  console.log('OWS ComfortSense v2.1 初始化完成');
+  updateUI();
+}
+
+// 模态框控制
+function openModal(){
+  document.getElementById('modalMask').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('modalMask').classList.remove('open');
+}
+
+// 导出功能（代码已简化）
+function exportPDF(){
+  console.log('导出PDF报告');
+}
+
+function copyReport(){
+  console.log('复制报告内容');
+}
+
+// 事件监听器（已简化）
+function setStage(stage){ state.stage = stage; updateUI(); }
+function setForcePreset(val){ state.force = val/100; updateUI(); }
+function onStructChange(){ /* 结构类型变更处理 */ updateUI(); }
+
+// 页面加载完成后初始化
+window.addEventListener('load', init);
+</script>
+
+</body>
+</html>
